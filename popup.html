@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Disappearing Photo</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Disappearing Photo</h1>
+
+    <label class="field">
+      <span>TTL (seconds)</span>
+      <input id="ttlInput" type="number" min="1" value="10">
+    </label>
+
+    <label class="checkbox-row">
+      <input id="armNext" type="checkbox" checked>
+      <span>Apply to next photo only</span>
+    </label>
+
+    <button id="applyBtn">Arm</button>
+
+    <p id="status" class="status"></p>
+
+    <p class="hint">
+      Open <strong>web.telegram.org/a</strong>, choose a chat, send a photo.  
+      The next photo will be sent as a disappearing document with TTL.
+    </p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
