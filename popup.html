@@ -1,33 +1,23 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Disappearing Photo</title>
+  <meta charset="UTF-8">
+  <title>Disappearing Media Settings</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Disappearing Photo</h1>
-
-    <label class="field">
-      <span>TTL (seconds)</span>
-      <input id="ttlInput" type="number" min="1" value="10">
+  <h1>Disappearing Media</h1>
+  <label>
+    <input type="checkbox" id="enableGlobal">
+    Enable for all chats
+  </label>
+  <div>
+    <label>
+      Timeout (seconds):
+      <input type="number" id="timeout" min="5" value="30">
     </label>
-
-    <label class="checkbox-row">
-      <input id="armNext" type="checkbox" checked>
-      <span>Apply to next photo only</span>
-    </label>
-
-    <button id="applyBtn">Arm</button>
-
-    <p id="status" class="status"></p>
-
-    <p class="hint">
-      Open <strong>web.telegram.org/a</strong>, choose a chat, send a photo.  
-      The next photo will be sent as a disappearing document with TTL.
-    </p>
   </div>
+  <button id="save">Save</button>
 
   <script src="popup.js"></script>
 </body>

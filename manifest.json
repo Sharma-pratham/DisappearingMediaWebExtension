@@ -1,38 +1,41 @@
 {
   "manifest_version": 3,
-  "name": "Telegram Web Disappearing Photos (Web A)",
-  "version": "1.0.0",
-  "description": "Send disappearing photos on web.telegram.org/a by enabling Telegram's hidden ttlSeconds support.",
+  "name": "Telegram Disappearing Media",
+  "version": "1.0",
+  "description": "Automatically deletes uploaded media messages after a timeout",
+
   "permissions": [
     "storage",
+    "alarms",
     "scripting",
-    "activeTab"
+    "tabs"
   ],
+
   "host_permissions": [
-    "https://web.telegram.org/a/*"
+    "https://web.telegram.org/*"
   ],
+
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Disappearing Photo"
-  },
+
   "content_scripts": [
     {
-      "matches": [
-        "https://web.telegram.org/a/*"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["https://web.telegram.org/*"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
+
   "web_accessible_resources": [
     {
       "resources": ["injected.js"],
-      "matches": ["https://web.telegram.org/a/*"]
+      "matches": ["https://web.telegram.org/*"]
     }
-  ]
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  }
 }

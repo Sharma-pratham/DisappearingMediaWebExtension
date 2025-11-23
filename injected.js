@@ -1,145 +1,120 @@
-// Runs in the main world of web.telegram.org/a
-(function () {
-  console.log("[TG Disappear] injected into page.");
+// injected.js - runs in page context, automates Telegram UI
 
-  // Shared config in page context
-  window.__tgDisappearConfig = {
-    ttlSeconds: 10,
-    armNext: false
-  };
+console.log("Injected.js: Loaded");
 
-  // Listen for config updates from content script
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    const data = event.data;
-    if (!data || data.source !== "tg-disappear-ext") return;
+// --- Helpers ---
+function sleep(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
 
-    if (data.type === "CONFIG" && data.payload) {
-      const { ttlSeconds, armNext } = data.payload;
-      if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
-        window.__tgDisappearConfig.ttlSeconds = ttlSeconds;
+function waitForSelector(selector, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const el = document.querySelector(selector);
+    if (el) return resolve(el);
+
+    const observer = new MutationObserver(() => {
+      const el2 = document.querySelector(selector);
+      if (el2) {
+        observer.disconnect();
+        resolve(el2);
       }
-      if (typeof armNext === "boolean") {
-        window.__tgDisappearConfig.armNext = armNext;
-      }
-      console.log("[TG Disappear] config updated:", window.__tgDisappearConfig);
-    }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`Timeout waiting for: ${selector}`));
+    }, timeout);
+  });
+}
+
+// --- Step 1: Open context menu for a message ---
+// --- Step 1: Open context menu via right-click ---
+async function openMenuForMessage(messageEl) {
+  console.log("Injected.js: right-clicking message to open menu…");
+
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    button: 2, // right-click
   });
 
-  // Utility: find the uploadMedia function by scanning window objects
-  function findUploadMediaFunction() {
-    const visited = new Set();
+  messageEl.dispatchEvent(event);
 
-    function scan(obj, depth) {
-      if (!obj || depth > 6) return null; // avoid going too deep
-      if (typeof obj !== "object" && typeof obj !== "function") return null;
-      if (visited.has(obj)) return null;
-      visited.add(obj);
+  // Wait for the bubble menu to appear
+  const menu = await waitForSelector('.bubble.menu-container.open');
+  return menu;
+}
 
-      for (const key in obj) {
-        let val;
-        try {
-          val = obj[key];
-        } catch (e) {
-          continue;
-        }
+// --- Step 2: Click the 'Delete' option ---
+async function clickDeleteInMenu(menu) {
+  const deleteBtn = [...menu.querySelectorAll(".MenuItem")].find((el) =>
+    /delete/i.test(el.textContent)
+  );
 
-        if (typeof val === "function") {
-          let src;
-          try {
-            src = Function.prototype.toString.call(val);
-          } catch (e) {
-            continue;
-          }
-
-          // Heuristic: look for the signature of uploadMedia from messages.ts
-          if (
-            src.includes("INPUT_WAVEFORM_LENGTH") &&
-            src.includes("InputMediaUploadedDocument") &&
-            src.includes("ttlSeconds")
-          ) {
-            console.log("[TG Disappear] Found uploadMedia candidate:", key);
-            return { owner: obj, key, fn: val };
-          }
-        } else if (val && (typeof val === "object" || typeof val === "function")) {
-          const result = scan(val, depth + 1);
-          if (result) return result;
-        }
-      }
-
-      return null;
-    }
-
-    return scan(window, 0);
+  if (!deleteBtn) {
+    console.error("Injected.js: Delete button not found in context menu");
+    return;
   }
 
-  function isImageOrVideoMime(mimeType) {
-    if (typeof mimeType !== "string") return false;
-    return mimeType.startsWith("image/") || mimeType.startsWith("video/");
+  deleteBtn.click();
+}
+
+// --- Step 3: Delete Dialog ---
+async function confirmDeleteForEveryone() {
+  const dialog = await waitForSelector(".Modal.open");
+
+  // Tick checkbox: "Also delete for Telegram"
+  const checkbox = dialog.querySelector(
+    'label.Checkbox.dialog-checkbox input[type="checkbox"]'
+  );
+  if (checkbox && !checkbox.checked) {
+    checkbox.click();
   }
 
-  function patchUploadMedia() {
-    const found = findUploadMediaFunction();
-    if (!found) {
-      console.warn("[TG Disappear] uploadMedia not found yet, retrying…");
-      setTimeout(patchUploadMedia, 2000);
-      return;
-    }
+  await sleep(50);
 
-    const { owner, key, fn: originalUploadMedia } = found;
+  // Click final Delete button
+  const deleteBtn = [...dialog.querySelectorAll("button")].find((el) =>
+    /delete/i.test(el.textContent)
+  );
 
-    if (owner.__tgPatchedUploadMedia) {
-      console.log("[TG Disappear] uploadMedia already patched.");
-      return;
-    }
+  if (deleteBtn) deleteBtn.click();
+}
 
-    owner.__tgPatchedUploadMedia = true;
+// --- Full pipeline ---
+async function deleteMessageById(messageId) {
 
-    owner[key] = async function patchedUploadMedia(message, attachment, onProgress) {
-      try {
-        const cfg = window.__tgDisappearConfig;
-        if (
-          cfg &&
-          cfg.armNext &&
-          attachment &&
-          isImageOrVideoMime(attachment.mimeType)
-        ) {
-          const ttl = cfg.ttlSeconds;
-          if (Number.isFinite(ttl) && ttl > 0) {
-            console.log(
-              "[TG Disappear] Applying TTL",
-              ttl,
-              "seconds to attachment:",
-              attachment
-            );
+  // Fix fractional IDs like 145.000001 → 145
+  const normalizedId = String(messageId).split('.')[0];
 
-            // Force as document so uploadMedia uses InputMediaUploadedDocument with ttlSeconds
-            attachment = Object.assign({}, attachment, {
-              ttlSeconds: ttl,
-              shouldSendAsFile: true
-            });
+  const selector = `[data-message-id="${normalizedId}"], #message-${normalizedId}`;
+  const messageEl = document.querySelector(selector);
 
-            // Consume armNext so only the next photo is affected
-            cfg.armNext = false;
-          }
-        }
-      } catch (e) {
-        console.error("[TG Disappear] Error modifying attachment:", e);
-      }
-
-      // Call original uploadMedia
-      return originalUploadMedia.call(this, message, attachment, onProgress);
-    };
-
-    console.log("[TG Disappear] uploadMedia patched successfully.");
+  if (!messageEl) {
+    console.warn("Injected.js: Message not found", normalizedId);
+    return;
   }
 
-  // Try patching after a short delay to let Telegram init
-  if (document.readyState === "complete" || document.readyState === "interactive") {
-    setTimeout(patchUploadMedia, 1000);
-  } else {
-    window.addEventListener("DOMContentLoaded", () => {
-      setTimeout(patchUploadMedia, 1000);
-    });
+  console.log("Injected.js: Deleting message", normalizedId);
+
+  const menu = await openMenuForMessage(messageEl);
+  if (!menu) return;
+
+  await clickDeleteInMenu(menu);
+  await sleep(50);
+
+  await confirmDeleteForEveryone();
+
+  console.log("Injected.js: Message deleted:", normalizedId);
+}
+
+// --- Listen for messages from content.js ---
+window.addEventListener("message", (e) => {
+  if (e.source !== window) return;
+  if (e.data?.type === "DELETE_MESSAGE") {
+    deleteMessageById(e.data.messageId);
   }
-})();
+});
